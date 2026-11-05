@@ -1,7 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  experimental: {
+    serverActions: { allowedOrigins: ['panikrin.github.io', '127.0.0.1:5180'] },
+  },
 };
 
 export default nextConfig;

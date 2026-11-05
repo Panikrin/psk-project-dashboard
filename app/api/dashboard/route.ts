@@ -3,6 +3,7 @@ import { env } from 'cloudflare:workers';
 import { schema } from '../../../lib/dashboard-schema';
 import { getSiteUser } from '../../../lib/site-auth';
 import seed from '../../../lib/seed.json';
+import { trustedRequest } from '../../../lib/client-origin';
 function json(data:unknown,status=200){return Response.json(data,{status,headers:{'Cache-Control':'private, no-store'}});}
 async function readState() {
   if (!env.DB) throw new Error('Database binding missing');
@@ -19,8 +20,7 @@ export async function GET() {
 }
 export async function PUT(request:Request) {
   if(!await getSiteUser()) return json({error:'Войди по паролю команды.'},401);
-  if(request.headers.get('sec-fetch-site')==='cross-site' ||
-    (request.headers.get('origin') && request.headers.get('origin')!==new URL(request.url).origin)) return json({error:'Запрос с другого сайта запрещён.'},403);
+  if(!trustedRequest(request)) return json({error:'Запрос с другого сайта запрещён.'},403);
   if(!request.headers.get('content-type')?.includes('application/json')) return json({error:'Ожидается JSON.'},415);
   try {
     const raw=await request.text();if(raw.length>1500000)return json({error:'Слишком большой список задач.'},413);

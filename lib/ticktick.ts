@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { mergeTickTick, excluded } from './ticktick-merge.mjs';
 import seed from './seed.json';
 export function json(value:unknown,status=200){return Response.json(value,{status,headers:{'Cache-Control':'private, no-store'}});}
-export function sameOrigin(r:Request){return r.headers.get('sec-fetch-site')!=='cross-site'&&(!r.headers.get('origin')||r.headers.get('origin')===new URL(r.url).origin);}
+export { trustedRequest as sameOrigin } from './client-origin';
 const db=()=>{if(!env.DB)throw new Error('База временно недоступна.');return env.DB;};
 const connectionSchema=z.object({owner_id:z.string(),secret_cipher:z.string(),config:z.string(),last_success:z.string().nullable(),last_error:z.string().nullable(),lock_until:z.number()});
 export async function connection(){const row=await db().prepare('SELECT owner_id,secret_cipher,config,last_success,last_error,lock_until FROM ticktick_connection WHERE id=?').bind('main').first();return row?connectionSchema.parse(row):null;}
