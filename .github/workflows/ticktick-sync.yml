@@ -1,0 +1,32 @@
+name: TickTick → ПСК
+on:
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ticktick-sync
+  cancel-in-progress: false
+jobs:
+  sync:
+    if: vars.SYNC_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Обновить задачи и проверить сохранение
+        env:
+          PSK_SYNC_SERVICE_KEY: ${{ secrets.PSK_SYNC_SERVICE_KEY }}
+        run: |
+          node --input-type=module <<'JS'
+          const key=process.env.PSK_SYNC_SERVICE_KEY;
+          if(!key)throw Error('Не настроен ключ обновления');
+          const url='https://psk-project-dashboard.denis-panikrin.chatgpt.site/api/ticktick/sync';
+          async function call(method){const r=await fetch(url,{method,redirect:'error',headers:{'X-PSK-Sync-Key':key},signal:AbortSignal.timeout(90000)});if(!r.ok)throw Error('Сервис обновления ответил '+r.status);return r.json();}
+          let result=await call('POST');
+          if(result.busy){await new Promise(r=>setTimeout(r,30000));result=await call('POST');}
+          if(!result.connected||!result.enabled||result.busy)throw Error('Обновление не выполнено');
+          const saved=await call('GET');
+          if(!saved.connected||!saved.enabled||saved.lastError||!saved.lastSuccess||Date.now()-Date.parse(saved.lastSuccess)>300000)throw Error('Сохранённое обновление не подтверждено');
+          console.log(JSON.stringify({lastSuccess:saved.lastSuccess,revision:saved.dashboardRevision,tasks:saved.taskCount,active:saved.activeTaskCount}));
+          JS

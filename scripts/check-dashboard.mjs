@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {schema} from '../lib/dashboard-schema.ts';
+import {mergeTickTick} from '../lib/ticktick-merge.mjs';
+import fs from 'node:fs';
+const seed=JSON.parse(fs.readFileSync(new URL('../lib/seed.json',import.meta.url)));
+assert.equal(seed.tasks.length,0,'public source contains no live tasks');
+const legacy={tasks:[{id:1,title:'Проверить проект',project:'Учебный проект',owner:'Тестовый участник',start:'',date:'2026-11-10',time:'20:00 МСК',repeat:'',done:false}],projects:['Учебный проект'],revision:1};assert.ok(schema.safeParse(legacy).success,'legacy data remain valid');
+const task={...legacy.tasks[0],stage:'Проектирование',plannedMinutes:120,actualSeconds:3600,timerStartedAt:new Date(Date.now()-60000).toISOString(),subtasks:[{id:'s1',title:'Проверить расчёт',date:'2026-11-10',done:true}]};
+const state={tasks:[task],projects:legacy.projects,revision:1};const saved=schema.parse(state);
+assert.deepEqual(saved.tasks[0].subtasks,task.subtasks);assert.equal(saved.tasks[0].plannedMinutes,120);assert.equal(saved.tasks[0].actualSeconds,3600);assert.equal(saved.tasks[0].timerStartedAt,task.timerStartedAt);
+for(const change of [{plannedMinutes:-1},{actualSeconds:-1},{subtasks:[{id:'s',title:'',date:'',done:false}]},{subtasks:[{id:'s',title:'Шаг',date:'2026-02-30',done:false}]},{done:true},{timerStartedAt:new Date(Date.now()+3600000).toISOString()}])assert.equal(schema.safeParse({...state,tasks:[{...task,...change}]}).success,false);
+assert.equal(schema.safeParse({...state,tasks:[task,{...task,id:999}]}).success,false,'only one timer');
+const remote={id:'remote',projectId:'psk',title:task.title,status:0,kind:'TEXT',dueDate:'2026-11-12T17:00:00+0000'};
+let merged=mergeTickTick(state,[{task:remote,project:task.project}],['psk']);
+assert.equal(merged.tasks[0].plannedMinutes,120);assert.deepEqual(merged.tasks[0].subtasks,task.subtasks);assert.equal(merged.tasks[0].timerStartedAt,task.timerStartedAt);
+merged=mergeTickTick(merged,[{task:{...remote,status:2},project:task.project}],['psk']);assert.equal(merged.tasks[0].timerStartedAt,null);assert.ok(merged.tasks[0].actualSeconds>=3660);assert.ok(schema.safeParse({...merged,revision:2}).success);
+assert.equal(legacy.tasks[0].plannedMinutes,undefined,'no invented plan');
+console.log('PASS: legacy data, plan/fact and subtasks roundtrip, validation, one timer, TickTick preserves local planning and stops completed timers');
