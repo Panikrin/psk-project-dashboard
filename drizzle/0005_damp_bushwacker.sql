@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `commercial_history_project_revision` ON `commercial_history` (`project`,`revision`);

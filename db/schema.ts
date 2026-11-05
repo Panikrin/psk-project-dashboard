@@ -1,4 +1,4 @@
-import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 export const dashboard = sqliteTable('dashboard', {
   id: text('id').primaryKey(),
   payload: text('payload').notNull(),
@@ -33,3 +33,18 @@ export const teamAuth = sqliteTable('team_auth', {id:text('id').primaryKey(),sal
 export const teamSessions = sqliteTable('team_sessions', {idHash:text('id_hash').primaryKey(),authVersion:integer('auth_version').notNull(),expiresAt:integer('expires_at').notNull()});
 export const loginLimits = sqliteTable('login_limits', {id:text('id').primaryKey(),attempts:integer('attempts').notNull().default(0),expiresAt:integer('expires_at').notNull()});
 export const projectDrive = sqliteTable('project_drive', {project:text('project').primaryKey(),folderId:text('folder_id').notNull(),updatedAt:text('updated_at').notNull()});
+export const projectCommercial = sqliteTable('project_commercial', {
+  project: text('project').primaryKey(),
+  payload: text('payload').notNull(),
+  revision: integer('revision').notNull().default(1),
+  updatedAt: text('updated_at').notNull(),
+});
+export const commercialHistory = sqliteTable('commercial_history', {
+  id: text('id').primaryKey(),
+  project: text('project').notNull(),
+  revision: integer('revision').notNull(),
+  payload: text('payload').notNull(),
+  action: text('action').notNull(),
+  actor: text('actor').notNull(),
+  createdAt: text('created_at').notNull(),
+}, table=>[uniqueIndex('commercial_history_project_revision').on(table.project,table.revision)]);

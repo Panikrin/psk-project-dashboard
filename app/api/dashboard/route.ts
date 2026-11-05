@@ -35,6 +35,7 @@ export async function PUT(request:Request) {
       statements.push(env.DB!.prepare('UPDATE project_profiles SET project=?,revision=revision+1 WHERE project=? AND EXISTS(SELECT 1 FROM dashboard WHERE id=? AND revision=? AND payload=?)').bind(added[0],removed[0],'main',revision+1,payload));
       statements.push(env.DB!.prepare('UPDATE project_drive SET project=? WHERE project=? AND EXISTS(SELECT 1 FROM dashboard WHERE id=? AND revision=? AND payload=?)').bind(added[0],removed[0],'main',revision+1,payload));
       statements.push(env.DB!.prepare('UPDATE project_media SET project=? WHERE project=? AND EXISTS(SELECT 1 FROM dashboard WHERE id=? AND revision=? AND payload=?)').bind(added[0],removed[0],'main',revision+1,payload));
+      for(const table of ['project_commercial','commercial_history']) statements.push(env.DB!.prepare(`UPDATE ${table} SET project=? WHERE project=? AND EXISTS(SELECT 1 FROM dashboard WHERE id=? AND revision=? AND payload=?)`).bind(added[0],removed[0],'main',revision+1,payload));
     }
     const [update]=await env.DB!.batch(statements);
     if(update.meta.changes!==1)return json({error:'На другом устройстве уже есть изменения. Список обновлён; проверь карточку и сохрани ещё раз.',state:await readState()},409);
