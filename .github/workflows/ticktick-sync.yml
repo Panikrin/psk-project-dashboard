@@ -14,6 +14,26 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Проверить публичный вход и защиту задач
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          const base='https://psk-project-dashboard.denis-panikrin.chatgpt.site';
+          const login=await fetch(base+'/login',{redirect:'manual'});
+          assert.equal(login.status,200,'Public login must open without ChatGPT');
+          const html=await login.text();
+          assert.ok(html.includes('Вход для команды')&&html.includes('pattern="[0-9]{6}"'),'Team code form required');
+          const dashboard=await fetch(base+'/dashboard',{redirect:'manual'});
+          assert.equal(dashboard.status,302);
+          assert.equal(new URL(dashboard.headers.get('location'),base).pathname,'/login');
+          for(const [path,status] of [['/api/dashboard',401],['/api/media',401],['/api/projects',401],['/api/admin',403]]){
+            const r=await fetch(base+path,{redirect:'manual'});
+            assert.equal(r.status,status,path);
+            assert.ok(r.headers.get('content-type')?.includes('application/json'),'Application authorization must protect '+path);
+          }
+          assert.equal((await (await fetch(base+'/api/auth')).json()).authenticated,false);
+          console.log('PASS: public six-digit login, no ChatGPT account required, private data protected');
+          JS
       - name: Обновить задачи и проверить сохранение
         env:
           PSK_SYNC_SERVICE_KEY: ${{ secrets.PSK_SYNC_SERVICE_KEY }}
