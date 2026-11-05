@@ -19,6 +19,18 @@ jobs:
           node --input-type=module <<'JS'
           import assert from 'node:assert/strict';
           const base='https://psk-project-dashboard.denis-panikrin.chatgpt.site';
+          const github=await fetch('https://panikrin.github.io/psk-project-dashboard/');
+          assert.equal(github.status,200,'GitHub Pages must be published');
+          assert.ok((await github.text()).includes('Пароль команды · 6 цифр'));
+          const origin='https://panikrin.github.io';
+          const preflight=await fetch(base+'/api/auth',{method:'OPTIONS',headers:{Origin:origin,'Access-Control-Request-Method':'POST','Access-Control-Request-Headers':'authorization,content-type'}});
+          assert.equal(preflight.status,204);
+          assert.equal(preflight.headers.get('access-control-allow-origin'),origin);
+          const denied=await fetch(base+'/api/dashboard',{headers:{Origin:origin}});
+          assert.equal(denied.status,401);
+          assert.equal(denied.headers.get('access-control-allow-origin'),origin);
+          const foreign=await fetch(base+'/api/dashboard',{method:'OPTIONS',headers:{Origin:'https://foreign.test'}});
+          assert.equal(foreign.status,403);
           const login=await fetch(base+'/login',{redirect:'manual'});
           assert.equal(login.status,200,'Public login must open without ChatGPT');
           const html=await login.text();
