@@ -15,6 +15,7 @@ function prepare(sql) {
   const api = { bind(...values) { params = values; return api; },
     async first() { return db.prepare(sql).get(...params) || null; },
     async run() { const result = db.prepare(sql).run(...params); return { meta: { changes: Number(result.changes) } }; },
+    async all() { return {results:db.prepare(sql).all(...params)}; },
   }; return api;
 }
 const binding = { prepare, async batch(statements) { const out=[];db.exec('BEGIN');try{for(const s of statements)out.push(await s.run());db.exec('COMMIT');return out;}catch(e){db.exec('ROLLBACK');throw e;} } };
@@ -103,6 +104,9 @@ const oldMerged=mergeTickTick(before,[{task:old,project:'Задачи PSK'}],[PS
 db.prepare('UPDATE dashboard SET payload=?').run(JSON.stringify({tasks:oldMerged.tasks,projects:oldMerged.projects}));
 await x.lib.applySourceSnapshot({fetchedAt:new Date().toISOString(),tasks:[sourceTasks[0]]});
 result=await x.lib.taskList(false);assert.equal(result.tasks.length,1,'old open cache is hidden, not falsely completed');assert.equal(result.tasks[0].owner,'@isaevaoa95','actual native assignee restored');
+const cached=JSON.parse(db.prepare('SELECT payload FROM dashboard').get().payload);cached.tasks.find(t=>t.ticktick.id===sourceTasks[0].id).done=true;
+db.prepare('UPDATE dashboard SET payload=?').run(JSON.stringify(cached));
+assert.equal((await x.lib.taskList(false)).tasks[0].done,false,'legacy local-only checkmarks cannot hide real active tasks');
 const sourceRoute=load(root+'/app/api/tasks/source/route.ts');
 const nativeBody={projectId:PSK_PROJECT_ID,fetchedAt:new Date().toISOString(),tasks:sourceTasks.map(t=>({...t,repeatFlag:t.repeatFlag||null}))};
 const nativeReq=(value,key)=>new Request('https://psk.test/api/tasks/source',{method:'POST',headers:{'Content-Type':'application/json',...(key?{'X-PSK-Mark-Key':key}:{})},body:JSON.stringify(value)});

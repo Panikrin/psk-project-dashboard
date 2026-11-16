@@ -52,15 +52,22 @@ export async function taskList(refresh = true) {
   if(snapshot&&Date.now()-Date.parse(snapshot.fetchedAt)>180000)warning='Сверка Марка задерживается. Показан последний подтверждённый список.';
   const current = await state(), c = await connection();
   const active=new Map<string,any>((snapshot?.tasks||[]).map((t:any)=>[t.id,t]));
+  await ensureLedger();
+  const confirmations=await database().prepare('SELECT remote_task_id,MAX(updated_at) AS verified_at FROM psk_task_completions WHERE status=? GROUP BY remote_task_id')
+    .bind('verified').all<{remote_task_id:string;verified_at:string}>();
+  const recent=new Set(confirmations.results.filter(r=>snapshot&&Date.parse(r.verified_at)>Date.parse(snapshot.fetchedAt)).map(r=>r.remote_task_id));
   const tasks = current.tasks.filter((t: any) => t.ticktick?.projectId === PSK_PROJECT_ID && !t.archived && (!snapshot||t.done||active.has(t.ticktick.id))).map((t: any) => {
     const source=active.get(t.ticktick.id),fields=source?remoteFields(source,taskProject(source)):null;
     const same=source&&sourceOccurrence(source)===t.ticktick.occurrence;
+    // Legacy local-only checkmarks are not source completions. An active native
+    // card wins, except while the native snapshot predates our verified write.
+    const done=source&&!recent.has(t.ticktick.id)?false:t.done;
     return ({
     id: t.id, title: t.title, project: taskProject(t), owner: t.owner || '',
     ...(source?{owner:sourceOwner(source)}:{}),
-    date: same?fields!.date:t.date, time: same?fields!.time:t.time, repeat: t.repeat, done: t.done,
+    date: same?fields!.date:t.date, time: same?fields!.time:t.time, repeat: t.repeat, done,
     category: taskCategory(t), occurrence: t.ticktick.occurrence || '',
-    canComplete: !t.done && !!t.ticktick.occurrence,
+    canComplete: !done && !!t.ticktick.occurrence,
   });});
   return { tasks, revision: current.revision,
     sync: { lastSuccess: snapshot?.fetchedAt||c?.last_success || null, error: warning || c?.last_error || '', connected: !!c,
