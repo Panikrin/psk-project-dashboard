@@ -18,7 +18,7 @@ export async function tickRequest(token:string,path:string){
   return response.json();
 }
 export const projectList=z.array(z.object({id:z.string().min(1).max(150),name:z.string().max(200),kind:z.string().optional()}));
-const remoteTask=z.object({id:z.string().min(1),projectId:z.string().min(1),title:z.string().min(1).max(700),kind:z.string().optional(),content:z.string().optional(),startDate:z.string().nullish(),dueDate:z.string().nullish(),isAllDay:z.boolean().optional(),timeZone:z.string().optional(),repeatFlag:z.string().nullish(),status:z.number().optional()});
+const remoteTask=z.object({id:z.string().min(1),projectId:z.string().min(1),title:z.string().min(1).max(700),kind:z.string().optional(),content:z.string().nullish(),assignee:z.union([z.string(),z.number()]).nullish(),startDate:z.string().nullish(),dueDate:z.string().nullish(),isAllDay:z.boolean().optional(),timeZone:z.string().optional(),repeatFlag:z.string().nullish(),status:z.number().optional()});
 const projectData=z.object({tasks:z.array(remoteTask).max(2000)});
 export const selectionSchema=z.array(z.object({id:z.string().min(1).max(150),name:z.string().trim().min(1).max(80)})).min(1).max(40);
 export async function state(){await db().prepare('INSERT OR IGNORE INTO dashboard (id,payload,revision,updated_at) VALUES (?,?,1,?)').bind('main',JSON.stringify(seed),new Date().toISOString()).run();const row=await db().prepare('SELECT payload,revision FROM dashboard WHERE id=?').bind('main').first<{payload:string;revision:number}>();if(!row)throw new Error('Задачи пока недоступны.');return {...JSON.parse(row.payload),revision:row.revision};}

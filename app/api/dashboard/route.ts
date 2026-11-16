@@ -27,7 +27,19 @@ export async function PUT(request:Request) {
     let decoded:unknown;try{decoded=JSON.parse(raw);}catch{return json({error:'Некорректные данные.'},400);}
     const result=schema.safeParse(decoded);if(!result.success)return json({error:result.error.issues[0]?.message||'Проверь поля задачи.'},400);
     const {revision,tasks,projects}=result.data,updatedAt=new Date().toISOString();
-    const previous=await readState(),payload=JSON.stringify({tasks,projects});
+    const previous=await readState();
+    if(previous.revision!==revision)return json({error:'На другом устройстве уже есть изменения. Список обновлён; проверь карточку.',state:previous},409);
+    // Linked identities and completion state belong to the source. The dedicated
+    // completion route verifies the TickTick write before updating the board.
+    for(const old of previous.tasks){
+      if(!old.ticktick)continue;
+      const next=tasks.find(t=>t.id===old.id);
+      if(!next||next.ticktick?.id!==old.ticktick.id||next.ticktick?.projectId!==old.ticktick.projectId)
+        return json({error:'Связанную карточку нельзя отвязать от TickTick. Обнови список.',state:previous},409);
+      if(next.done!==old.done)return json({error:'Закрывай задачу через галочку с подтверждением TickTick. Вернуть выполненную задачу можно в TickTick.',state:previous},409);
+      next.ticktick=old.ticktick;
+    }
+    const payload=JSON.stringify({tasks,projects});
     const removed=previous.projects.filter((p:string)=>!projects.includes(p)),added=projects.filter((p:string)=>!previous.projects.includes(p));
     const statements=[env.DB!.prepare('UPDATE dashboard SET payload=?, revision=revision+1, updated_at=? WHERE id=? AND revision=?')
       .bind(payload,updatedAt,'main',revision)];

@@ -4,5 +4,6 @@ declare namespace Cloudflare {
     BUCKET?: R2Bucket;
     PSK_SYNC_KEY?: string;
     PSK_SERVICE_SYNC_KEY?: string;
+    PSK_MARK_TASKS_KEY?: string;
   }
 }

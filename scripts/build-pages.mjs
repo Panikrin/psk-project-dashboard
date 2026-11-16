@@ -17,17 +17,18 @@ window.pskPages=(()=>{
 const pskFetch=(...args)=>pskPages.request(...args);
 </script>`;
 let dashboard=await fs.readFile('app/dashboard.html','utf8');
+let tasks=await fs.readFile('app/tasks.html','utf8');
 const original=await fs.readFile('app/login/route.ts','utf8');
 const start=original.indexOf('const html=')+11,end=original.indexOf('</html>`;',start)+8;
 let login=vm.runInNewContext(original.slice(start,end));
 function assets(html){return html.replaceAll("url('/fonts/","url('./fonts/").replaceAll('href="/favicon.svg"','href="./favicon.svg"');}
 function inject(html){return html.replace('<script>',bridge+'<script>');}
-login=assets(login).replaceAll('fetch(','pskFetch(').replace("location.assign('/dashboard')","pskPages.save(d.sessionToken);location.assign(pskPages.base+'dashboard.html')")
+login=assets(login).replaceAll('fetch(','pskFetch(').replace("location.assign(new URLSearchParams(location.search).get('next')==='tasks'?'/tasks':'/dashboard')","pskPages.save(d.sessionToken);location.assign(pskPages.base+(new URLSearchParams(location.search).get('next')==='tasks'?'tasks.html':'dashboard.html'))")
  .replace('href="/signin-with-chatgpt?return_to=%2Fsettings"','href="'+apiOrigin+'/signin-with-chatgpt?return_to=%2Fsettings"');
 login=inject(login);
 dashboard=assets(dashboard).replaceAll('fetch(','pskFetch(').replaceAll("location.assign('/login')","pskPages.clear();location.assign(pskPages.base+'index.html')")
  .replace("location.assign(authRole==='owner'?'/signout-with-chatgpt?return_to=%2Flogin':'/login')","pskPages.clear();location.assign(pskPages.base+'index.html')")
- .replaceAll('href="/settings"','href="'+apiOrigin+'/settings" target="_blank" rel="noopener noreferrer"');
+ .replaceAll('href="/tasks"','href="./tasks.html"').replaceAll('href="/settings"','href="'+apiOrigin+'/settings" target="_blank" rel="noopener noreferrer"');
 dashboard=inject(dashboard).replace(bridge,bridge+`<script>if(!pskPages.read())location.replace(pskPages.base+'index.html');</script>`);
 const media=`<script>
 (()=>{
@@ -39,7 +40,8 @@ const media=`<script>
 })();
 </script>`;
 dashboard=dashboard.replace('</body>',media+'</body>');
-for(const html of [login,dashboard])for(const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g))new vm.Script(match[1]);
+tasks=inject(assets(tasks));
+for(const html of [login,dashboard,tasks])for(const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g))new vm.Script(match[1]);
 await fs.mkdir(output,{recursive:true});
-await Promise.all([fs.writeFile(path.join(output,'index.html'),login),fs.writeFile(path.join(output,'login.html'),login),fs.writeFile(path.join(output,'dashboard.html'),dashboard),fs.writeFile(path.join(output,'.nojekyll'),''),fs.copyFile('public/favicon.svg',path.join(output,'favicon.svg')),fs.cp('public/fonts',path.join(output,'fonts'),{recursive:true})]);
+await Promise.all([fs.writeFile(path.join(output,'index.html'),login),fs.writeFile(path.join(output,'login.html'),login),fs.writeFile(path.join(output,'dashboard.html'),dashboard),fs.writeFile(path.join(output,'tasks.html'),tasks),fs.writeFile(path.join(output,'.nojekyll'),''),fs.copyFile('public/favicon.svg',path.join(output,'favicon.svg')),fs.cp('public/fonts',path.join(output,'fonts'),{recursive:true})]);
 console.log('GitHub Pages interface built:',output);

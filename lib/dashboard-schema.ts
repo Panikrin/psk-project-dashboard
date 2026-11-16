@@ -14,7 +14,8 @@ const task = z.object({
   timerStartedAt: z.string().datetime().refine(s=>Date.parse(s)<=Date.now()+60000,'Начало таймера не может быть в будущем.').nullable().optional(),
   subtasks: z.array(z.object({id:z.string().min(1).max(100),title:z.string().trim().min(1).max(300),date:z.union([isoDate,z.literal('')]),done:z.boolean()})).max(100)
     .refine(a=>new Set(a.map(t=>t.id)).size===a.length,'Повторяющиеся подзадачи.').optional(),
-  ticktick: z.object({id:z.string().max(150),projectId:z.string().max(150),baseline:z.record(z.union([z.string(),z.boolean()])),missing:z.boolean().optional()}).optional(),
+  category: z.enum(['work','regular','sales']).optional(),
+  ticktick: z.object({id:z.string().max(150),projectId:z.string().max(150),baseline:z.record(z.union([z.string(),z.boolean()])),missing:z.boolean().optional(),occurrence:z.string().max(1000).optional()}).optional(),
 }).refine(t => !t.start || !t.date || t.start <= t.date, 'Начало не может быть позже срока.');
 export const schema = z.object({
   revision: z.number().int().positive(), tasks: z.array(task).max(2000),
