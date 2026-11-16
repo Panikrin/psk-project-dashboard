@@ -2,30 +2,68 @@ import { env } from 'cloudflare:workers';
 import { equal } from './password-crypto.mjs';
 import { getSiteUser } from './site-auth';
 import { connection, database, decrypt, state, synchronize, tickRequest } from './ticktick';
-import { mergeTickTick } from './ticktick-merge.mjs';
-import { guardSource, PSK_PROJECT_ID, sourceOccurrence, taskCategory, taskProject } from './task-list.mjs';
+import { mergeTickTick, remoteFields } from './ticktick-merge.mjs';
+import { guardSource, PSK_PROJECT_ID, sourceOccurrence, sourceOwner, taskCategory, taskProject } from './task-list.mjs';
 import { performCompletion } from './task-completion.mjs';
 
 export async function tasksAllowed(request: Request) {
   // The agent key is restricted to these two PSK-only routes. It does not grant
   // dashboard edits, owner settings, credentials, media, or other TickTick lists.
-  const key = request.headers.get('X-PSK-Mark-Key');
-  if (key && env.PSK_MARK_TASKS_KEY && equal(key, env.PSK_MARK_TASKS_KEY)) return true;
+  if (markAllowed(request)) return true;
   return !!await getSiteUser();
+}
+
+export function markAllowed(request: Request) {
+  const key = request.headers.get('X-PSK-Mark-Key');
+  return !!key && !!env.PSK_MARK_TASKS_KEY && equal(key, env.PSK_MARK_TASKS_KEY);
+}
+
+async function sourceSnapshot(): Promise<any> {
+  await database().prepare('CREATE TABLE IF NOT EXISTS psk_source_snapshot(id TEXT PRIMARY KEY,payload TEXT NOT NULL,fetched_at TEXT NOT NULL)').run();
+  const row = await database().prepare('SELECT payload,fetched_at FROM psk_source_snapshot WHERE id=?').bind('main').first<{payload:string;fetched_at:string}>();
+  return row ? { tasks: JSON.parse(row.payload), fetchedAt: row.fetched_at } : null;
+}
+
+export async function applySourceSnapshot(snapshot: any) {
+  await sourceSnapshot();
+  const now=Date.now(),lease=now+90000;
+  const lock=await database().prepare('UPDATE ticktick_connection SET lock_until=? WHERE id=? AND lock_until<?').bind(lease,'main',now).run();
+  if(lock.meta.changes!==1)throw new Error('Идёт другая сверка. Повтори позже.');
+  try {
+    const old=await sourceSnapshot();
+    if(old&&Date.parse(snapshot.fetchedAt)<Date.parse(old.fetchedAt))throw new Error('Снимок старее уже сохранённой сверки.');
+    for(let attempt=0;attempt<4;attempt++){
+      const current=await state();
+      const merged=mergeTickTick(current,snapshot.tasks.map((task:any)=>({task,project:'Задачи PSK'})),[PSK_PROJECT_ID]);
+      const update=await database().prepare('UPDATE dashboard SET payload=?,revision=revision+1,updated_at=? WHERE id=? AND revision=?')
+        .bind(JSON.stringify({tasks:merged.tasks,projects:merged.projects}),new Date().toISOString(),'main',current.revision).run();
+      if(update.meta.changes!==1){if(attempt===3)throw new Error('Список сейчас редактируется.');continue;}
+      await database().prepare('INSERT INTO psk_source_snapshot(id,payload,fetched_at) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at')
+        .bind('main',JSON.stringify(snapshot.tasks),snapshot.fetchedAt).run();
+      return {ok:true,activeCount:snapshot.tasks.length,fetchedAt:snapshot.fetchedAt,revision:current.revision+1};
+    }
+  } finally {await database().prepare('UPDATE ticktick_connection SET lock_until=0 WHERE id=? AND lock_until=?').bind('main',lease).run();}
 }
 
 export async function taskList(refresh = true) {
   let warning = '';
-  if (refresh) try { await synchronize(); } catch (e) { warning = e instanceof Error ? e.message : 'Не удалось обновить TickTick.'; }
+  const snapshot=await sourceSnapshot();
+  if (refresh&&!snapshot) try { await synchronize(); } catch (e) { warning = e instanceof Error ? e.message : 'Не удалось обновить TickTick.'; }
+  if(snapshot&&Date.now()-Date.parse(snapshot.fetchedAt)>180000)warning='Сверка Марка задерживается. Показан последний подтверждённый список.';
   const current = await state(), c = await connection();
-  const tasks = current.tasks.filter((t: any) => t.ticktick?.projectId === PSK_PROJECT_ID && !t.archived).map((t: any) => ({
+  const active=new Map<string,any>((snapshot?.tasks||[]).map((t:any)=>[t.id,t]));
+  const tasks = current.tasks.filter((t: any) => t.ticktick?.projectId === PSK_PROJECT_ID && !t.archived && (!snapshot||t.done||active.has(t.ticktick.id))).map((t: any) => {
+    const source=active.get(t.ticktick.id),fields=source?remoteFields(source,taskProject(source)):null;
+    const same=source&&sourceOccurrence(source)===t.ticktick.occurrence;
+    return ({
     id: t.id, title: t.title, project: taskProject(t), owner: t.owner || '',
-    date: t.date, time: t.time, repeat: t.repeat, done: t.done,
+    ...(source?{owner:sourceOwner(source)}:{}),
+    date: same?fields!.date:t.date, time: same?fields!.time:t.time, repeat: t.repeat, done: t.done,
     category: taskCategory(t), occurrence: t.ticktick.occurrence || '',
     canComplete: !t.done && !!t.ticktick.occurrence,
-  }));
+  });});
   return { tasks, revision: current.revision,
-    sync: { lastSuccess: c?.last_success || null, error: warning || c?.last_error || '', connected: !!c,
+    sync: { lastSuccess: snapshot?.fetchedAt||c?.last_success || null, error: warning || c?.last_error || '', connected: !!c,
       enabled: !!c && JSON.parse(c.config).selected?.some((p: any) => p.id === PSK_PROJECT_ID) },
   };
 }
